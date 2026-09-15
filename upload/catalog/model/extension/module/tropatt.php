@@ -53,6 +53,23 @@ class ModelExtensionModuleTropatt extends Model {
             $customer_name = 'Покупатель #' . $order_id;
         }
 
+        // OpenCart keeps the country *name* in `shipping_country`; the gateway
+        // needs the ISO 3166-1 alpha-2 code, so it is resolved from `oc_country`
+        // by the stored country id (shipping address first, then payment). The
+        // readable name is still forwarded inside `custom_fields`.
+        $country_code = '';
+        foreach (array('shipping', 'payment') as $prefix) {
+            $country_id = (int)($order_info[$prefix . '_country_id'] ?? 0);
+            if ($country_id <= 0) {
+                continue;
+            }
+            $country_query = $this->db->query('SELECT iso_code_2 FROM ' . DB_PREFIX . 'country WHERE country_id = ' . $country_id . ' LIMIT 1');
+            $country_code = isset($country_query->row['iso_code_2']) ? strtoupper(trim((string)$country_query->row['iso_code_2'])) : '';
+            if ($country_code !== '') {
+                break;
+            }
+        }
+
         $payload = array(
             'external_id' => (string)$order_id,
             'payload' => array(
@@ -71,13 +88,14 @@ class ModelExtensionModuleTropatt extends Model {
                 'delivery_address' => array(
                     'city' => (string)($order_info['shipping_city'] ?? ''),
                     'street' => trim((string)($order_info['shipping_address_1'] ?? '') . ' ' . (string)($order_info['shipping_address_2'] ?? '')),
-                    'country' => (string)($order_info['shipping_country'] ?? 'RU')
+                    'country_code' => substr($country_code, 0, 2)
                 ),
                 'payment_method' => (string)($order_info['payment_method'] ?? ''),
                 'paid' => false,
                 'custom_fields' => array(
                     'opencart_comment' => (string)$order_info['comment'],
-                    'opencart_ip' => (string)$order_info['ip']
+                    'opencart_ip' => (string)$order_info['ip'],
+                    'opencart_country' => (string)($order_info['shipping_country'] ?? '')
                 )
             )
         );
